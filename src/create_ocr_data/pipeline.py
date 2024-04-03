@@ -1,4 +1,5 @@
 import csv
+import re
 from pathlib import Path
 
 from botok import WordTokenizer
@@ -14,35 +15,34 @@ from create_ocr_data.checkpoints import (
 wt = WordTokenizer()
 
 
+def latin_num_exists(text):
+    # Regular expression to find any sequence of digits
+    latin_num_pattern = r"\d"  # Matches any single digit
+
+    # Search for at least one occurrence of a Latin number
+    match = re.search(latin_num_pattern, text)
+
+    # Return True if a match is found, False otherwise
+    return match is not None
+
+
 def analyze_ocr_texts(ocr_data):
     for line in ocr_data:
         tokens = wt.tokenize(line["text"])
-        non_word_count = 0
-        non_bo_word_count = 0
-        tib_num_count = 0
+        non_bo_num = False
+        non_bo_word = False
+        tib_num = False
         for token in tokens:
-            if token.pos == "NON_WORD" and not token.skrt:
-                non_word_count += 1
-            if token.chunk_type in ["LATIN", "CJK", "OTHER"] and (
-                token.chunk_type != "OTHER" or not token.skrt
-            ):
-                non_bo_word_count += 1
+            if token.chunk_type in ["LATIN", "CJK", "OTHER"]:
+                non_bo_word = True
+                if token.chunk_type == "LATIN" and latin_num_exists(token.text):
+                    non_bo_num = True
             if token.chunk_type == "NUM":
-                tib_num_count += 1
-        if len(tokens) > 0:
-            if (
-                non_word_count / len(tokens) > 0.01
-                or non_bo_word_count / len(tokens) > 0.01
-            ):
-                line["validity"] = "Invalid"
-            else:
-                line["validity"] = "Valid"
+                tib_num = True
 
-        line["word_count"] = len(tokens)
-        line["non_bo_word_count"] = non_bo_word_count
-        line["non_word_count"] = non_word_count
-        line["tib_num_count"] = tib_num_count
-
+        line["non_bo_word"] = non_bo_word
+        line["tib_num"] = tib_num
+        line["non_bo_num"] = non_bo_num
     return ocr_data
 
 
@@ -70,15 +70,11 @@ def parse_html(html_file_path):
 
 
 def find_corresponding_image_path(html_file_path):
-    # Extract parts needed to construct the image path
-    parts = list(html_file_path.parts)
-    work_id_volume_id = parts[-3]  # Assuming this is 'W00EGS1016612-I01JW78' format
-    volume_id = work_id_volume_id.split("-")[1]
-    html_id = parts[-1][:-5]
-    page_id = (
-        f"{volume_id}{html_id[-4:]}"  # Remove .html and prepend with work_id_volume_id
-    )
-    image_path = Path(work_id_volume_id, "images", page_id)
+    html_file_path = Path(html_file_path)
+    parts = html_file_path.parts
+    page_id = html_file_path.stem
+    image_path = Path(*parts[:-3], "ocr", "images", f"{page_id}")
+
     return image_path
 
 
@@ -89,6 +85,7 @@ def find_image_files(image_path_pattern):
 
 def crop_and_save_line_images(image_file_path, ocr_data, output_dir):
     """Crop and save line images from a page image based on OCR data."""
+    output_dir.mkdir(parents=True, exist_ok=True)
     try:
         image_files = find_image_files(image_file_path)
         if not image_files:
@@ -111,30 +108,27 @@ def crop_and_save_line_images(image_file_path, ocr_data, output_dir):
 
 
 def update_csv_files_by_category(
-    base_csv_file_path, ocr_data, repo_id, work_id, volume_id, page_id
+    base_csv_file_path, ocr_data, work_id, volume_id, page_id
 ):
     base_path_template = (
         str(base_csv_file_path.parent / (base_csv_file_path.stem + "_{}"))
         + base_csv_file_path.suffix
     )
 
-    categories = ["50-75%", "76-90%", "91-100%", "Uncategorized", "No Confidence Data"]
+    categories = ["51-85%", "86-100%", "0-50%"]
     writers = {}
     files = {}  # Dictionary to keep track of file handles
 
     # Define the header
     header = [
-        "Repo ID",
         "Work ID",
         "Volume ID",
         "Page ID",
         "Line Image Name",
         "OCR Confidence",
-        "Word Count",
-        "Non Word Count",
-        "Non Bo Word Count",
-        "Tib Num Count",
-        "validty",
+        "Tibetan Num",
+        "Non Bo Word",
+        "Non Bo Num",
         "Text",
     ]
 
@@ -154,32 +148,25 @@ def update_csv_files_by_category(
         ocr_conf = line.get("ocr_conf")
         # Determine the confidence category
         if ocr_conf:
-            if 50 <= ocr_conf <= 75:
-                confidence_category = "50-75%"
-            elif 76 <= ocr_conf <= 90:
-                confidence_category = "76-90%"
-            elif 91 <= ocr_conf <= 100:
-                confidence_category = "91-100%"
+            if 51 <= ocr_conf <= 85:
+                confidence_category = "51-85%"
+            elif 86 <= ocr_conf <= 100:
+                confidence_category = "86-100%"
             else:
-                confidence_category = "Uncategorized"
-        else:
-            confidence_category = "No Confidence Data"
+                confidence_category = "0-50%"
 
         # Append the data row to the appropriate CSV
         writers[confidence_category].writerow(
             [
-                repo_id,
                 work_id,
                 volume_id,
                 page_id,
                 line.get("line_image_name", "No Image"),
-                ocr_conf if ocr_conf else "No Data",
-                line.get("word_count", "N/A"),
-                line.get("non_word_count", "N/A"),
-                line.get("non_bo_word_count", "N/A"),
-                line.get("tib_num_count", "N/A"),
-                line.get("validity", "N/A"),
-                line.get("text", "N/A"),
+                ocr_conf if ocr_conf else "No Confidence",
+                line.get("tib_num"),
+                line.get("non_bo_word"),
+                line.get("non_bo_num"),
+                line["text"],
             ]
         )
 
@@ -188,10 +175,8 @@ def update_csv_files_by_category(
         file.close()
 
 
-def process_repo_folder(repo_folder, work_image_folder, output_base):
-    """Process HTML files in repo folder, cropping images and updating CSVs."""
-    checkpoints = load_checkpoints()
-    for html_file in Path(repo_folder).rglob("*.html"):
+def process_volume_folder(volume_folder, checkpoints, output_base):
+    for html_file in volume_folder.rglob("*.html"):
         if str(html_file) in checkpoints:
             continue  # Skip already processed files
         try:
@@ -199,36 +184,43 @@ def process_repo_folder(repo_folder, work_image_folder, output_base):
             if ocr_data is None:  # Skip if parsing failed
                 continue
             image_path = find_corresponding_image_path(html_file)
-            work_id = image_path.parts[0].split("-")[0]
-            volume_id = image_path.parts[0].split("-")[1]
-            output_dir = output_base / work_id / image_path
-            image_file_path = work_image_folder / f"{image_path}"
-            ocr_data = crop_and_save_line_images(image_file_path, ocr_data, output_dir)
+            parts = image_path.parts
+            work_id, work_volume_id = parts[-5:-3]
+            volume_id = work_volume_id.split("-")[1]
+            output_dir = (
+                output_base / work_id / work_volume_id / "images" / image_path.name
+            )
+            ocr_data = crop_and_save_line_images(image_path, ocr_data, output_dir)
             ocr_data = analyze_ocr_texts(ocr_data)
             if ocr_data:  # Ensure OCR data was processed successfully
                 csv_file_path = output_base / work_id / f"{work_id}.csv"
-                repo_id = repo_folder.name
                 update_csv_files_by_category(
                     csv_file_path,
                     ocr_data,
-                    repo_id,
                     work_id,
                     volume_id,
-                    image_file_path.name,
+                    image_path.name,
                 )
                 save_checkpoint(html_file)  # Mark as processed
         except Exception as e:
             save_corrupted_files(html_file, str(e))
 
 
+def process_work_folder(work_folder, output_base):
+    """Process HTML files in work folder, cropping images and updating CSVs."""
+    checkpoints = load_checkpoints()
+    for volume_folder in work_folder.iterdir():
+        if not volume_folder.is_dir():
+            continue
+        process_volume_folder(volume_folder, checkpoints, output_base)
+        save_checkpoint(volume_folder)
+
+
 # Example usage:
 if __name__ == "__main__":
-    repo_folder = Path(
-        "/home/gangagyatso/Desktop/work/create_ocr_data/data/assets/IF15C06ED"
+    work_folder = Path(
+        "/home/gangagyatso/Desktop/work/create_ocr_data/data/works/W00EGS1017555"
     )
-    work_image_folder = Path(
-        "/home/gangagyatso/Desktop/work/create_ocr_data/data/works/W00EGS1016612"
-    )
-    output_base = Path("./data/output")
+    output_base = Path("./data/outputs")
     output_base.mkdir(parents=True, exist_ok=True)
-    process_repo_folder(repo_folder, work_image_folder, output_base)
+    process_work_folder(work_folder, output_base)

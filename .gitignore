@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 data/
+checkpoint.txt
+corrupted_file.txt
 # C extensions
 *.so
 
