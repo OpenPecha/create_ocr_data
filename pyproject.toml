@@ -17,6 +17,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+  "beautifulsoup4>=4.12.3",
   "Pillow>=10.2.0",
   "tqdm>=4.66.2",
   "botok>=0.8.12",
