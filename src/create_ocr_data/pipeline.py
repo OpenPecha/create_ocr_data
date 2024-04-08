@@ -39,7 +39,7 @@ def analyze_ocr_texts(ocr_data):
                     non_bo_num = True
             if token.chunk_type == "NUM":
                 tib_num = True
-
+        line["text length"] = len(line["text"])
         line["non_bo_word"] = non_bo_word
         line["tib_num"] = tib_num
         line["non_bo_num"] = non_bo_num
@@ -83,22 +83,31 @@ def find_image_files(image_path_pattern):
     return list(Path(image_path_pattern.parent).glob(f"{image_path_pattern.name}.*"))
 
 
-def crop_and_save_line_images(image_file_path, ocr_data, output_dir):
+def crop_and_save_line_images(image_file_path, ocr_data, output_dir, volume_id):
     """Crop and save line images from a page image based on OCR data."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     try:
+        # Assuming find_image_files is a function you've defined to locate image files.
         image_files = find_image_files(image_file_path)
         if not image_files:
             raise FileNotFoundError(f"No image file found for {image_file_path}")
         image = Image.open(image_files[0])
         page_id = image_files[0].stem
+
+        # Construct the directory for the current page images
+        image_page_id = f"{volume_id}{page_id[-4:]}"
+        page_output_dir = output_dir / image_page_id
+        page_output_dir.mkdir(
+            parents=True, exist_ok=True
+        )  # Create it only once per page
+
         for i, line in enumerate(ocr_data, start=1):
-            line_image_id = f"{page_id}_{i:04d}"
-            output_path = output_dir / f"{line_image_id}{image_files[0].suffix}"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            line_image_id = f"{image_page_id}_{i:04d}"
+            output_path = page_output_dir / f"{line_image_id}{image_files[0].suffix}"
             cropped_image = image.crop(line["bbox"])
             cropped_image.save(output_path)
+            line["image_page_id"] = image_page_id
             line["line_image_name"] = output_path.name
+
         return ocr_data
     except UnidentifiedImageError as e:
         save_corrupted_files(image_file_path, f"UnidentifiedImageError {str(e)}")
@@ -115,7 +124,7 @@ def update_csv_files_by_category(
         + base_csv_file_path.suffix
     )
 
-    categories = ["51-85%", "86-100%", "0-50%"]
+    categories = ["51-89%", "90-100%", "0-50%"]
     writers = {}
     files = {}  # Dictionary to keep track of file handles
 
@@ -129,6 +138,7 @@ def update_csv_files_by_category(
         "Tibetan Num",
         "Non Bo Word",
         "Non Bo Num",
+        "Text_length",
         "Text",
     ]
 
@@ -148,10 +158,10 @@ def update_csv_files_by_category(
         ocr_conf = line.get("ocr_conf")
         # Determine the confidence category
         if ocr_conf:
-            if 51 <= ocr_conf <= 85:
-                confidence_category = "51-85%"
-            elif 86 <= ocr_conf <= 100:
-                confidence_category = "86-100%"
+            if 51 <= ocr_conf <= 89:
+                confidence_category = "51-89%"
+            elif 90 <= ocr_conf <= 100:
+                confidence_category = "90-100%"
             else:
                 confidence_category = "0-50%"
 
@@ -160,12 +170,13 @@ def update_csv_files_by_category(
             [
                 work_id,
                 volume_id,
-                page_id,
+                line["image_page_id"],
                 line.get("line_image_name", "No Image"),
                 ocr_conf if ocr_conf else "No Confidence",
                 line.get("tib_num"),
                 line.get("non_bo_word"),
                 line.get("non_bo_num"),
+                line.get("text length"),
                 line["text"],
             ]
         )
@@ -187,10 +198,11 @@ def process_volume_folder(volume_folder, checkpoints, output_base):
             parts = image_path.parts
             work_id, work_volume_id = parts[-5:-3]
             volume_id = work_volume_id.split("-")[1]
-            output_dir = (
-                output_base / work_id / work_volume_id / "images" / image_path.name
+            output_dir = output_base / work_id / "images"
+
+            ocr_data = crop_and_save_line_images(
+                image_path, ocr_data, output_dir, volume_id
             )
-            ocr_data = crop_and_save_line_images(image_path, ocr_data, output_dir)
             ocr_data = analyze_ocr_texts(ocr_data)
             if ocr_data:  # Ensure OCR data was processed successfully
                 csv_file_path = output_base / work_id / f"{work_id}.csv"

@@ -8,10 +8,7 @@ from create_ocr_data.checkpoints import (
     save_checkpoint,
     save_corrupted_files,
 )
-from create_ocr_data.extract_valid_image import (
-    filter_and_copy_csv,
-    organize_images_by_criteria,
-)
+from create_ocr_data.extract_valid_image import organize_images_and_create_category_csvs
 from create_ocr_data.pipeline import process_work_folder
 
 
@@ -20,25 +17,16 @@ def worker_task(args):
     work = Path(work)
     work_id = work.name
     output_work_dir = Path(output_dir / work_id)
-    desired_columns = [
-        "Work ID",
-        "Volume ID",
-        "Page ID",
-        "Line Image Name",
-        "OCR Confidence",
-        "Text",
-    ]
+    csv_file_path = output_work_dir / f"{work_id}_90-100%.csv"
+    images_base_path = output_work_dir
+    output_base = output_work_dir / "filtered_images"
     if f"{str(work)}" in checkpoints:
         return
     try:
         process_work_folder(work, output_dir)
-        organize_images_by_criteria(
-            output_work_dir / f"{work_id}_86-100%.csv",
-            output_work_dir,
-            output_work_dir / "filtered_images",
+        organize_images_and_create_category_csvs(
+            csv_file_path, images_base_path, output_base
         )
-        csv_file_paths = list(output_work_dir.rglob("*.csv"))
-        filter_and_copy_csv(csv_file_paths, desired_columns)
         save_checkpoint(work)
     except Exception as e:
         save_corrupted_files(work, str(e))
