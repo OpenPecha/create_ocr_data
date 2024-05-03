@@ -73,7 +73,7 @@ def find_corresponding_image_path(html_file_path):
     html_file_path = Path(html_file_path)
     parts = html_file_path.parts
     page_id = html_file_path.stem
-    image_path = Path(*parts[:-3], "ocr", "images", f"{page_id}")
+    image_path = Path(*parts[:-2], "images", f"{page_id}")
 
     return image_path
 
@@ -196,7 +196,7 @@ def process_volume_folder(volume_folder, checkpoints, output_base):
                 continue
             image_path = find_corresponding_image_path(html_file)
             parts = image_path.parts
-            work_id, work_volume_id = parts[-5:-3]
+            work_id, work_volume_id = parts[-4:-2]
             volume_id = work_volume_id.split("-")[1]
             output_dir = output_base / work_id / "images"
 
@@ -231,7 +231,7 @@ def process_work_folder(work_folder, output_base):
 # Example usage:
 if __name__ == "__main__":
     work_folder = Path(
-        "/home/gangagyatso/Desktop/work/create_ocr_data/data/works/W00EGS1017555"
+        "/home/gangagyatso/Desktop/work/create_ocr_data/data/extracted_data/W00EGS1017319"
     )
     output_base = Path("./data/outputs")
     output_base.mkdir(parents=True, exist_ok=True)

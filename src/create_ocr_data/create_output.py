@@ -56,6 +56,6 @@ def reorganize_directory_structure(base_path: Path, new_base_path: Path):
 
 
 # Call the function
-base_path = Path("./data/outputs")
-new_base_path = Path("./data/outputs_new")
+base_path = Path("../../data/output_data")
+new_base_path = Path("../../data/outputs_new")
 reorganize_directory_structure(base_path, new_base_path)
