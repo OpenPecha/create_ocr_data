@@ -48,15 +48,15 @@ def process_all_works(works: Path, output_dir: Path, num_processes: int = 10):
             tqdm(
                 pool.imap(worker_task, tasks),
                 total=len(tasks),
-                desc="Converting files to txt",
+                desc="Creating OCR data...",
             )
         )
 
 
 if __name__ == "__main__":
-    works = Path("./data/works")
+    works = Path("../../data/extracted_data")
 
-    output_dir = Path("./data/outputs")
+    output_dir = Path("../../data/output_data")
     output_dir.mkdir(parents=True, exist_ok=True)
-    num_processes = 4
+    num_processes = 10
     process_all_works(works, output_dir, num_processes)
