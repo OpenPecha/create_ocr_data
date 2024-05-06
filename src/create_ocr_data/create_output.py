@@ -52,7 +52,7 @@ def reorganize_directory_structure(base_path: Path, new_base_path: Path):
             zip_file_path = path.parent / f"{path.name}.zip"
             zip_dir(path, zip_file_path)
             # Optional: Remove the directory after zipping if desired
-            # shutil.rmtree(path)
+            shutil.rmtree(path)
 
 
 # Call the function
