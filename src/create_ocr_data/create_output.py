@@ -2,6 +2,8 @@ import shutil
 import zipfile
 from pathlib import Path
 
+import pandas as pd
+
 
 def zip_dir(src_dir: Path, dest_zip: Path):
     """
@@ -16,7 +18,6 @@ def zip_dir(src_dir: Path, dest_zip: Path):
 
 def reorganize_directory_structure(base_path: Path, new_base_path: Path):
     new_base_path.mkdir(parents=True, exist_ok=True)
-
     for work_id in base_path.iterdir():
         if not work_id.is_dir():
             continue
@@ -24,8 +25,8 @@ def reorganize_directory_structure(base_path: Path, new_base_path: Path):
         paths = {
             "bo_text": new_base_path / "bo" / "text" / work_id.name,
             "bo_number": new_base_path / "bo" / "numbers" / work_id.name,
-            "non_bo_text": new_base_path / "non-bo" / "text" / work_id.name,
-            "non_bo_number": new_base_path / "non-bo" / "numbers" / work_id.name,
+            "non_bo_text": new_base_path / "non-bo" / work_id.name,
+            "non_bo_number": new_base_path / "non-bo" / work_id.name,
         }
 
         # Create new directories and their image subdirectories
@@ -41,18 +42,31 @@ def reorganize_directory_structure(base_path: Path, new_base_path: Path):
                     shutil.copy(str(image_file), dest_path / "images")
 
         # Move CSV files
-        csv_path = work_id / "csv"
+        csv_path = Path(work_id) / "csv"
         for csv_file in csv_path.iterdir():
             category = csv_file.stem
             dest_path = paths[category]
-            shutil.copy(str(csv_file), dest_path / f"{work_id.name}.csv")
+            dest_file_path = dest_path / f"{work_id.name}.csv"
 
-        # Zip each work folder
+            if dest_file_path.exists():
+                # File exists, append new data to existing CSV
+                existing_df = pd.read_csv(dest_file_path)
+                new_df = pd.read_csv(csv_file)
+                combined_df = pd.concat([existing_df, new_df[1:]])
+                combined_df.to_csv(dest_file_path, index=False)
+            else:
+                # File does not exist, copy the new file
+                shutil.copy(str(csv_file), dest_file_path)
+
         for key, path in paths.items():
             zip_file_path = path.parent / f"{path.name}.zip"
             zip_dir(path, zip_file_path)
-            # Optional: Remove the directory after zipping if desired
-            shutil.rmtree(path)
+
+            # Check if the directory exists before trying to remove it
+            if path.exists():
+                shutil.rmtree(path)
+            else:
+                print(f"Attempted to remove non-existing directory: {path}")
 
 
 # Call the function
