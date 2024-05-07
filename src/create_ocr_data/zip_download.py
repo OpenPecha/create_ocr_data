@@ -2,15 +2,12 @@ import io
 import os
 import pickle
 
+from google.auth.transport.requests import Request  # Add this import
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-# Scopes define the level of access you are requesting over the user's data.
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-
-# Path to your OAuth 2.0 credentials.
-CREDENTIALS_FILE = "../../data/drive_cred.json"
+from create_ocr_data.checkpoints import load_checkpoints, save_checkpoint
 
 # The ID of the Google Drive folder from which to download ZIP files.
 FOLDER_ID = "15Y-PnZBT1JtrZX1ck-RT4Hd1oWU9VA7b"
@@ -22,15 +19,28 @@ DOWNLOAD_PATH = "../../data/work_zip/"
 def authenticate_google_drive():
     """Authenticate and return a Google Drive service instance."""
     creds = None
-    if os.path.exists("../../data/token.pickle"):
-        with open("../../data/token.pickle", "rb") as token:
+    token_pickle = "../../data/token.pickle"
+    credentials_file = "../../data/drive_cred.json"
+    scopes = ["https://www.googleapis.com/auth/drive.readonly"]
+
+    if os.path.exists(token_pickle):
+        with open(token_pickle, "rb") as token:
             creds = pickle.load(token)
+
+    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-        creds = flow.run_local_server(port=0)
-        with open("../../data/token.pickle", "wb") as token:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_file, scopes)
+            creds = flow.run_console()
+
+        # Save the credentials for the next run
+        with open(token_pickle, "wb") as token:
             pickle.dump(creds, token)
-    return build("drive", "v3", credentials=creds)
+
+    service = build("drive", "v3", credentials=creds)
+    return service
 
 
 def list_zip_files(service, folder_id):
@@ -57,13 +67,17 @@ def download_file(service, file_id, file_name, download_path):
 
 
 def main():
+    checkpoints = load_checkpoints()
     service = authenticate_google_drive()
     if not os.path.exists(DOWNLOAD_PATH):
         os.makedirs(DOWNLOAD_PATH)
     zip_files = list_zip_files(service, FOLDER_ID)
     for file in zip_files:
+        if file["name"] in checkpoints:
+            continue
         print(f"Downloading {file['name']}...")
         download_file(service, file["id"], file["name"], DOWNLOAD_PATH)
+        save_checkpoint(file["name"])
 
 
 if __name__ == "__main__":
